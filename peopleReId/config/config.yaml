@@ -1,0 +1,13 @@
+fastreid:
+    onnx_file:     "../models/mobilenetv2_x1_4.onnx"
+    engine_file:   "../models/mobilenetv2_x1_4.trt"
+    BATCH_SIZE:    1
+    INPUT_CHANNEL: 1
+    IMAGE_WIDTH:   128
+    IMAGE_HEIGHT:  256
+    image_order:   "BCHW"
+    channel_order: "BGR"
+    img_mean:      [ 0, 0, 0 ]
+    img_std:       [ 1, 1, 1 ]
+    alpha:         1.0
+    resize:        "directly"

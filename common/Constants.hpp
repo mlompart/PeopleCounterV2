@@ -15,7 +15,7 @@ extern cv::Scalar WHITE_COLOUR;
 
 // Track Params
 constexpr float IOU_RATIO = 0.10;
-constexpr uint16_t DISTANCE_THRESHOLD = 140;
+constexpr uint16_t DISTANCE_THRESHOLD = 80;
 constexpr uint16_t AMOUNT_REPEAT = 155;
 constexpr uint16_t MIN_DETECTION_AREA = 35000;
 constexpr uint32_t MAX_DETECTION_AREA = 250000;

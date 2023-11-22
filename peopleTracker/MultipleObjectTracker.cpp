@@ -4,8 +4,18 @@
 #include <iostream>
 #include <opencv2/core.hpp>
 
-
 namespace peopleTracker {
+    MultipleObjectTracker::MultipleObjectTracker(const std::string &configPath) {
+        YAML::Node root = YAML::LoadFile(configPath);
+        peopleReId = std::make_unique<peopleReId::Fastreid>(root["fastreid"]);
+        peopleReId->LoadEngine();
+        if (peopleReId) {
+            std::cout << "FastReId model loaded successfully!" << std::endl;
+        } else {
+            std::cout << "FastReId model not loaded" << std::endl;
+        }
+    }
+
     void MultipleObjectTracker::trackDetections(cv::Mat &frame, const Detections &detections) {
 
         if (not detections.empty()) {
@@ -52,6 +62,7 @@ namespace peopleTracker {
             cleanUpReleasedObjects();
         }
     }
+
     bool MultipleObjectTracker::isDistanceValid(const cv::Rect newBox, const cv::Rect oldBox, const uint32_t id) {
         cv::Point oldCenter(oldBox.x + (oldBox.width / 2), oldBox.y + (oldBox.height / 2));
         cv::Point newCenter(newBox.x + (newBox.width / 2), newBox.y + (newBox.height / 2));
@@ -85,15 +96,22 @@ namespace peopleTracker {
 
             if (status == StatusT::EXITING and isAnyObjectInside()) {
 
-                cv::Mat detectHist = calculateDetectionHistogram(frame, detection.getBoundingBox());
-                auto key = recognizeExitingObjectByDetectHist(detectHist);
+                auto feature = calculateDetectionFeature(frame, detection);
+                auto key = recognizeExitingObjectByFeature(feature);
                 auto id = trackedObjects[key]->getId();
                 trackedObjects.erase(key);
-                trackedObjects[key] = std::make_unique<ObjectTracker>(frame, detection.getBoundingBox(), id, status);
+                trackedObjects[key] = std::make_unique<ObjectTracker>(frame, detection.getBoundingBox(), id, status, feature);
             } else {
-                this->trackedObjects[nextId] = std::make_unique<ObjectTracker>(frame, detection.getBoundingBox(), nextId++, status);
+                auto feature = calculateDetectionFeature(frame, detection);
+                this->trackedObjects[nextId] =
+                        std::make_unique<ObjectTracker>(frame, detection.getBoundingBox(), nextId++, status, feature);
             }
         }
+    }
+
+    peopleReId::FeatureRes MultipleObjectTracker::calculateDetectionFeature(const cv::Mat &frame, const Detection &detection) {
+        cv::Mat objectImage = frame(detection.getBoundingBox());
+        return peopleReId->inferenceDetections(objectImage);
     }
     StatusT MultipleObjectTracker::recognizeDirection(const cv::Rect &trackedWin) {
         StatusT status{};
@@ -107,6 +125,7 @@ namespace peopleTracker {
     bool MultipleObjectTracker::isObjectAtFrameEdge(cv::Mat &mat, const Detection &detection) {
         return detection.left() < 5 or detection.left() + detection.width() > mat.cols - 5;
     }
+
     void MultipleObjectTracker::cleanUpReleasedObjects() {
         for (auto it = trackedObjects.begin(); it != trackedObjects.end();) {
             if (it->second->isReleased()) {
@@ -116,6 +135,7 @@ namespace peopleTracker {
             }
         }
     }
+
     cv::Mat MultipleObjectTracker::calculateDetectionHistogram(cv::Mat &frame, const cv::Rect rect) {
         auto roi = frame(rect);
         cv::Mat hsv_roi;
@@ -133,6 +153,28 @@ namespace peopleTracker {
         cv::normalize(hist, hist, 0, 255, cv::NORM_MINMAX);
         return hist;
     }
+
+    uint32_t MultipleObjectTracker::recognizeExitingObjectByFeature(const peopleReId::FeatureRes &detFeature) {
+        std::unordered_map<uint32_t, float> similarities;
+        for (auto &object: trackedObjects) {
+            if (object.second->getStatus() == StatusT::INSIDE) {
+                similarities[object.first] = peopleReId->computeSimilarity(detFeature, object.second->getFeature());
+            }
+        }
+        if (not similarities.empty()) std::cout << "Similarities: ";
+        for (auto &similarity: similarities) { std::cout << similarity.second << " "; }
+        std::cout << std::endl;
+        auto maxSimilarityPair = std::max_element(
+                similarities.begin(), similarities.end(),
+                [](const std::pair<uint32_t, float> &a, const std::pair<uint32_t, float> &b) { return a.second > b.second; });
+
+        if (maxSimilarityPair != similarities.end()) {
+            return maxSimilarityPair->first;
+        } else {
+        }
+        return 0;
+    }
+
     uint32_t MultipleObjectTracker::recognizeExitingObjectByDetectHist(const cv::Mat &detectHist) {
         int comparisonMethod = cv::HISTCMP_CHISQR;
         std::unordered_map<uint32_t, double> similarities;
@@ -176,9 +218,10 @@ namespace peopleTracker {
         rectangle(frame, tlc, brc, BLACK_COLOUR, cv::FILLED);
         // Put the label on the black rectangle.
         putText(frame, label, cv::Point(0, top + label_size.height), FONT_FACE, 0.8, WHITE_COLOUR, 1);
-        putText(frame, {"Numer klatki: " + std::to_string(frameNr)}, cv::Point(0, 600), FONT_FACE, FONT_SCALE, {244,5,5}, 1,2);
+        putText(frame, {"Numer klatki: " + std::to_string(frameNr)}, cv::Point(0, 600), FONT_FACE, FONT_SCALE, {244, 5, 5}, 1, 2);
         frameNr++;
     }
+
     uint32_t MultipleObjectTracker::getAmountOfInsideObject() const {
         return std::count_if(trackedObjects.begin(), trackedObjects.end(),
                              [](auto &trackedObject) { return trackedObject.second->getStatus() == StatusT::INSIDE; });

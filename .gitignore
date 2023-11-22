@@ -2,3 +2,6 @@ build
 *.mp4
 doc
 tmp
+models
+model
+samples

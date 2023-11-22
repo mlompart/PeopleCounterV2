@@ -1,10 +1,11 @@
 #include "ObjectTracker.hpp"
 #include "Constants.hpp"
 #include <iostream>
+#include <utility>
 
 namespace peopleTracker {
-    ObjectTracker::ObjectTracker(cv::Mat &frame, cv::Rect trackedWin, const uint32_t objectId, const StatusT status)
-        : status(status), id(objectId), trackedWindow(trackedWin), amountOfRepeat(0) {
+    ObjectTracker::ObjectTracker(cv::Mat &frame, cv::Rect trackedWin, const uint32_t objectId, const StatusT status,  peopleReId::FeatureRes featureRes)
+        : status(status), id(objectId), trackedWindow(trackedWin), amountOfRepeat(0), feature(std::move(featureRes)) {
         roi = frame(trackedWindow);
 
         calcHist(frame);
@@ -12,16 +13,8 @@ namespace peopleTracker {
     }
 
     void ObjectTracker::update(cv::Mat frame) {
-        calcHist(frame);
-        cv::Mat hsv, dst;
-        cv::cvtColor(frame, hsv, cv::COLOR_BGR2HSV);
-        const float *range_[] = {range};
 
-        std::cout << "ObjectTracker::update updating object id: " << id << std::endl;
-        cv::calcBackProject(&hsv, 1, channels, roi_hist, dst, range_);
-        // apply meanshift to get the new location
-        cv::meanShift(dst, trackedWindow, term_crit);
-//        cv::CamShift(dst, trackedWindow, term_crit);
+
         drawBoundingBoxesAndLabels(frame);
         checkBoundaries(frame);
     }
@@ -60,7 +53,7 @@ namespace peopleTracker {
                 }
                 break;
             case StatusT::EXITING:
-                if (trackedWindow.x + trackedWindow.width >= frame.cols - 1) {
+                if (trackedWindow.x + trackedWindow.width >= frame.cols - 10) {
                     std::cout << "ObjectTracker::checkBoundaries() trackWindow == " << INPUT_WIDTH << " for id: " << this->getId()
                               << std::endl;
                     if (this->amountOfRepeat < AMOUNT_REPEAT - 25) { this->amountOfRepeat = AMOUNT_REPEAT - 25; }
